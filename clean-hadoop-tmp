@@ -1,0 +1,60 @@
+#!/usr/bin/env ruby
+# Copyright 2013, Nathan Milford
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+require 'time'
+
+lockfile   = "/var/tmp/clean-hadoop-tmp.lock"
+threshold  = 10800 # 3 Hours
+now        = Time.new.to_i
+batch_size = 500 # To work around the ARG_MAX limit in bash.
+
+dirs_to_delete = []
+total_deleted = 0
+
+unless File.exists?(lockfile)
+
+  puts "Dropping lock file. (#{lockfile})"
+  File.new(lockfile, "w")
+
+  target_dirs = `hadoop fs -ls /tmp`.split("\n")[1..-1]
+  puts "Scanning for directories in HDFS' /tmp older than #{threshold} seconds."
+
+  target_dirs.each do |tdir|
+    target_dir = tdir.split(" ")[7]
+    sub_dirs = `hadoop fs -ls #{target_dir}`.split("\n")
+    sub_dirs.each do |sdir|
+      dir_time = Time.parse("#{sdir.split(" ")[5]} #{sdir.split(" ")[6]}").to_i
+      dir_name = sdir.split(" ")[7]
+      if (now - dir_time) > threshold
+        dirs_to_delete << dir_name
+      end
+    end
+  end
+
+  puts "Deleting a total of #{dirs_to_delete.length} directories in batches of #{batch_size}."
+
+  dirs_to_delete.each_slice(batch_size) do |b|
+    total_deleted = total_deleted += b.length
+    puts "Deleting #{b.length} directories in this batch, total so far is #{total_deleted}."
+    `hadoop fs -rmr #{b.join(' ')}`
+  end
+
+  puts "Done. #{total_deleted} of #{dirs_to_delete.length} directories deleted."
+  puts "Deleting lock file and exiting. (#{lockfile})"
+  File.delete(lockfile)
+
+else
+  abort("Lock file (#{lockfile}) exists! Check to see if this script is already running. Exiting.")
+end
