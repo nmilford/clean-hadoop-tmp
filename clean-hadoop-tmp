@@ -28,12 +28,12 @@ unless File.exists?(lockfile)
   puts "Dropping lock file. (#{lockfile})"
   File.new(lockfile, "w")
 
-  target_dirs = `hadoop fs -ls /tmp`.split("\n")[1..-1]
+  target_dirs = `hadoop fs -ls /tmp`.split("\n")[2..-1]
   puts "Scanning for directories in HDFS' /tmp older than #{threshold} seconds."
 
   target_dirs.each do |tdir|
     target_dir = tdir.split(" ")[7]
-    sub_dirs = `hadoop fs -ls #{target_dir}`.split("\n")
+    sub_dirs = `hadoop fs -ls #{target_dir}`.split("\n")[2..-1]
     sub_dirs.each do |sdir|
       dir_time = Time.parse("#{sdir.split(" ")[5]} #{sdir.split(" ")[6]}").to_i
       dir_name = sdir.split(" ")[7]
@@ -48,7 +48,7 @@ unless File.exists?(lockfile)
   dirs_to_delete.each_slice(batch_size) do |b|
     total_deleted = total_deleted += b.length
     puts "Deleting #{b.length} directories in this batch, total so far is #{total_deleted}."
-    `hadoop fs -rmr #{b.join(' ')}`
+    `hadoop fs -rm r #{b.join(' ')}`
   end
 
   puts "Done. #{total_deleted} of #{dirs_to_delete.length} directories deleted."
